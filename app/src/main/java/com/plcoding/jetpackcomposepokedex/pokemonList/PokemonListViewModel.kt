@@ -15,6 +15,7 @@ import com.plcoding.jetpackcomposepokedex.repository.PokemonRepository
 import com.plcoding.jetpackcomposepokedex.util.Constants.PAGE_SIZE
 import com.plcoding.jetpackcomposepokedex.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import okhttp3.internal.platform.Platform
 import javax.inject.Inject
@@ -31,8 +32,42 @@ class PokemonListViewModel @Inject constructor(
     var isLoading = mutableStateOf(false)
     var endReached = mutableStateOf(false)
 
+    private var cachePokemonList = listOf<PokedexListEntry>()
+    private var isSearchStarting = true
+    var isSearching = mutableStateOf(false)
+
     init {
         loadPokemonPaginated()
+    }
+
+    fun searchPokemonList(query : String){
+        val listToSearch = if(isSearchStarting){
+            pokemonList.value
+        } else {
+            cachePokemonList
+        }
+        viewModelScope.launch(Dispatchers.Default) {
+            if(query.isEmpty()){
+                pokemonList.value = cachePokemonList
+                isSearching.value = false
+                isSearchStarting = true
+                return@launch
+            }
+
+            val result = listToSearch.filter {
+                  it.pokemonName.contains(query.trim(), ignoreCase = true) ||
+                          it.number.toString() == query.trim()
+            }
+
+            if(isSearchStarting){
+                cachePokemonList = pokemonList.value
+                isSearchStarting = false
+            }
+
+            pokemonList.value = result
+            isSearching.value = true
+
+        }
     }
 
     fun loadPokemonPaginated() {
@@ -40,6 +75,7 @@ class PokemonListViewModel @Inject constructor(
             isLoading.value = true
             val result = repository.getPokemonList(PAGE_SIZE, curPage * PAGE_SIZE)
             when (result) {
+
                 is Resource.Success -> {
                     endReached.value = curPage * PAGE_SIZE >= result.data!!.count
                     val pokedexEntries = result.data.results.mapIndexed { index, entry ->
@@ -48,19 +84,20 @@ class PokemonListViewModel @Inject constructor(
                         } else {
                             entry.url.takeLastWhile { it.isDigit() }
                         }
-
-                        val url = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${number}.png"
-                        PokedexListEntry(entry.name.capitalize(java.util.Locale.ROOT), url, number.toInt())
+                        val url =
+                            "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${number}.png"
+                        PokedexListEntry(
+                            entry.name.capitalize(java.util.Locale.ROOT), url, number.toInt()
+                        )
                     }
                     curPage++
                     loadError.value = ""
                     isLoading.value = false
                     pokemonList.value += pokedexEntries
-
                 }
 
                 is Resource.Error -> {
-                  loadError.value = result.message!!
+                    loadError.value = result.message!!
                     isLoading.value = false
                 }
 

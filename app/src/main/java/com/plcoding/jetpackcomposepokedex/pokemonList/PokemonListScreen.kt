@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.drawable.PaintDrawable
 import android.icu.text.StringSearch
 import android.widget.ImageView
+import android.widget.Space
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,21 +24,21 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.CircularProgressIndicator
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Surface
-import androidx.compose.material.Text
+import androidx.compose.material.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Alignment.Companion.Center
+import androidx.compose.ui.Alignment.Companion.CenterHorizontally
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusState
+import androidx.compose.ui.focus.isFocused
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -50,17 +51,21 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltNavGraphViewModel
+import androidx.navigation.compose.navigate
+
 import androidx.navigation.NavController
 import coil.request.ImageRequest
 import com.google.accompanist.coil.CoilImage
 import com.plcoding.jetpackcomposepokedex.R
 import com.plcoding.jetpackcomposepokedex.data.models.PokedexListEntry
 import com.plcoding.jetpackcomposepokedex.ui.theme.RobotoCondensed
+import dagger.hilt.android.lifecycle.HiltViewModel
 
 @Composable
 fun PokemonListScreen(
-    navController: NavController
+    navController: NavController,
+    viewModel: PokemonListViewModel = hiltNavGraphViewModel()
 ) {
 
     Surface(
@@ -84,7 +89,7 @@ fun PokemonListScreen(
                 hint = "Search"
             )
             {
-
+               viewModel.searchPokemonList(it)
             }
             Spacer(modifier = Modifier.height(20.dp))
             pokemonList(navController = navController)
@@ -125,7 +130,7 @@ fun searchBar(
                 .background(Color.White, CircleShape)
                 .padding(horizontal = 20.dp, vertical = 12.dp)
                 .onFocusChanged {
-                    isHintDisplayed = !it.isFocused
+                    isHintDisplayed = !it.isFocused && text.isNotEmpty()
                 }
         )
         if (isHintDisplayed) {
@@ -142,26 +147,42 @@ fun searchBar(
 @Composable
 fun pokemonList(
     navController: NavController,
-    viewModel: PokemonListViewModel = hiltViewModel()
+    viewModel: PokemonListViewModel = hiltNavGraphViewModel()
 ) {
     val pokemonList by remember { viewModel.pokemonList }
     val endReached by remember { viewModel.endReached }
     val loadError by remember { viewModel.loadError }
     val isLoading by remember { viewModel.isLoading }
+    val isSearching by remember { viewModel.isSearching }
 
     LazyColumn(contentPadding = PaddingValues(16.dp)) {
         val itemCount = if (pokemonList.size % 2 == 0) {
-            pokemonList.size/2
+            pokemonList.size / 2
         } else {
-            pokemonList.size/2+1
+            pokemonList.size / 2 + 1
         }
 
-        items(itemCount){
-            if(it>= itemCount -1 && !endReached){
-                 viewModel.loadPokemonPaginated()
+        items(itemCount) {
+            if (it >= itemCount - 1 && !endReached && !isLoading && !isSearching) {
+                viewModel.loadPokemonPaginated()
             }
-            pokedexRow(rowIndex = it, entries = pokemonList , navController = navController)
+            pokedexRow(rowIndex = it, entries = pokemonList, navController = navController)
         }
+    }
+
+    Box(
+        contentAlignment = Center,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(color = MaterialTheme.colors.primary)
+        }
+        if(loadError.isNotEmpty()){
+            retrySection(error = loadError) {
+                viewModel.loadPokemonPaginated()
+            }
+        }
+
     }
 
 }
@@ -171,7 +192,7 @@ fun pokedexEntry(
     entry: PokedexListEntry,
     navController: NavController,
     modifier: Modifier = Modifier,
-    viewModel: PokemonListViewModel = hiltViewModel()
+    viewModel: PokemonListViewModel = hiltNavGraphViewModel()
 ) {
     val defaultDominantColor = MaterialTheme.colors.surface
     var dominantColor by remember {
@@ -201,7 +222,7 @@ fun pokedexEntry(
     ) {
 
         Column {
-        /*    CoilImage(
+            CoilImage(
                 request = ImageRequest.Builder(LocalContext.current)
                     .data(entry.imageUrl)
                     .target {
@@ -220,7 +241,7 @@ fun pokedexEntry(
                     color = MaterialTheme.colors.primary,
                     modifier = Modifier.scale(0.5f)
                 )
-            }*/
+            }
 
             Text(
                 text = entry.pokemonName,
@@ -261,4 +282,23 @@ fun pokedexRow(
         Spacer(modifier = Modifier.height(16.dp))
     }
 
+
+}
+
+@Composable
+fun retrySection(
+    error: String,
+    onRetry: () -> Unit
+) {
+    Column {
+        Text(text = error, color = Color.Red, fontSize = 18.sp)
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = { onRetry },
+            modifier = Modifier.align(CenterHorizontally)
+        ) {
+            Text(text = "Retry")
+        }
+
+    }
 }
